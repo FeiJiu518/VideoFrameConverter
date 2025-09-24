@@ -3,7 +3,6 @@
 """
 视频转序列帧工具
 基于FFmpeg的可视化界面工具，用于将视频文件批量转换为序列帧
-改进版本：添加视频预览播放功能
 """
 
 import tkinter as tk
@@ -15,16 +14,13 @@ import threading
 import re
 import json
 from pathlib import Path
-import cv2
-from PIL import Image, ImageTk
-import time
 
 
 class VideoFrameConverter:
     def __init__(self):
         self.root = tkdnd.Tk()  # 支持拖拽的根窗口
         self.root.title("视频转序列帧工具")
-        self.root.geometry("800x800")
+        self.root.geometry("800x700")
         self.root.configure(bg='#f5f5f5')
         
         # 设置窗口图标和样式
@@ -36,19 +32,11 @@ class VideoFrameConverter:
         self.conversion_process = None
         self.is_converting = False
         
-        # 视频播放相关变量
-        self.cap = None
-        self.is_playing = False
-        self.current_frame = 0
-        self.total_frames = 0
-        self.video_thread = None
-        self.video_fps = 30
-        
         # 创建变量
         self.setup_variables()
         
-        # 检查FFmpeg和OpenCV
-        self.check_dependencies()
+        # 检查FFmpeg
+        self.check_ffmpeg()
         
         # 创建界面
         self.create_interface()
@@ -82,9 +70,8 @@ class VideoFrameConverter:
         self.status_var = tk.StringVar(value="等待开始转换")
         self.progress_var = tk.DoubleVar(value=0)
     
-    def check_dependencies(self):
-        """检查FFmpeg和OpenCV是否安装"""
-        # 检查FFmpeg
+    def check_ffmpeg(self):
+        """检查FFmpeg是否安装"""
         try:
             result = subprocess.run(['ffmpeg', '-version'], 
                                   capture_output=True, text=True, timeout=5)
@@ -95,14 +82,6 @@ class VideoFrameConverter:
         except (FileNotFoundError, subprocess.TimeoutExpired):
             messagebox.showerror("错误", "请先安装FFmpeg并配置环境变量\n"
                                "下载地址: https://ffmpeg.org/download.html")
-        
-        # 检查OpenCV
-        try:
-            import cv2
-            print("OpenCV检测成功")
-        except ImportError:
-            messagebox.showerror("错误", "请先安装OpenCV库\n"
-                               "安装命令: pip install opencv-python")
     
     def create_interface(self):
         """创建主界面"""
@@ -142,7 +121,7 @@ class VideoFrameConverter:
         
         close_btn = tk.Button(controls_frame, text="✕", width=3, height=1,
                              relief='flat', bg='#e74c3c', fg='white',
-                             command=self.on_closing)
+                             command=self.root.quit)
         close_btn.pack(side='left', padx=2)
     
     def create_import_section(self, parent):
@@ -150,14 +129,10 @@ class VideoFrameConverter:
         import_frame = ttk.Frame(parent, style='Section.TFrame')
         import_frame.pack(fill='both', expand=True, pady=10)
         
-        # 主容器
-        self.video_container = tk.Frame(import_frame, bg='white')
-        self.video_container.pack(fill='both', expand=True, padx=20, pady=20)
-        
-        # 拖拽区域（初始状态）
-        self.drop_frame = tk.Frame(self.video_container, bg='#f8f9fa', 
-                                  relief='solid', bd=2, height=200)
-        self.drop_frame.pack(fill='both', expand=True)
+        # 拖拽区域
+        self.drop_frame = tk.Frame(import_frame, bg='#f8f9fa', 
+                                  relief='solid', bd=2, height=150)
+        self.drop_frame.pack(fill='x', padx=20, pady=20)
         self.drop_frame.pack_propagate(False)
         
         # 拖拽提示文字
@@ -166,47 +141,6 @@ class VideoFrameConverter:
                                   bg='#f8f9fa', fg='#7f8c8d', 
                                   font=('Microsoft YaHei', 10))
         self.drop_label.pack(expand=True)
-        
-        # 视频播放区域（隐藏状态）
-        self.video_frame = tk.Frame(self.video_container, bg='black')
-        
-        # 视频画布
-        self.video_canvas = tk.Canvas(self.video_frame, bg='black', highlightthickness=0)
-        self.video_canvas.pack(fill='both', expand=True)
-        
-        # 关闭按钮
-        self.close_btn = tk.Button(self.video_frame, text="✕", 
-                                  width=3, height=1, relief='flat', 
-                                  bg='#e74c3c', fg='white', 
-                                  font=('Microsoft YaHei', 10, 'bold'),
-                                  command=self.clear_video)
-        self.close_btn.place(relx=1.0, rely=0.0, anchor='ne', x=-10, y=10)
-        
-        # 播放控制栏
-        control_frame = tk.Frame(self.video_frame, bg='#2c3e50', height=40)
-        control_frame.pack(fill='x', side='bottom')
-        control_frame.pack_propagate(False)
-        
-        # 播放按钮
-        self.play_btn = tk.Button(control_frame, text="▶", width=4, height=1,
-                                 relief='flat', bg='#3498db', fg='white',
-                                 font=('Microsoft YaHei', 12, 'bold'),
-                                 command=self.toggle_play)
-        self.play_btn.pack(side='left', padx=10, pady=8)
-        
-        # 进度条
-        self.video_progress_var = tk.DoubleVar()
-        self.video_progress = ttk.Scale(control_frame, from_=0, to=100, 
-                                       variable=self.video_progress_var,
-                                       orient='horizontal',
-                                       command=self.on_progress_change)
-        self.video_progress.pack(side='left', fill='x', expand=True, padx=10, pady=8)
-        
-        # 时间标签
-        self.time_label = tk.Label(control_frame, text="00:00 / 00:00", 
-                                  bg='#2c3e50', fg='white',
-                                  font=('Microsoft YaHei', 9))
-        self.time_label.pack(side='right', padx=10, pady=8)
         
         # 选择文件按钮
         select_btn = ttk.Button(import_frame, text="选择视频文件",
@@ -393,9 +327,6 @@ class VideoFrameConverter:
         # 输出文件夹变化时检查按钮状态
         self.output_folder_var.trace('w', self.check_start_button)
         
-        # 窗口关闭事件
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-        
         # 初始预览
         self.update_preview()
         self.check_start_button()
@@ -434,229 +365,26 @@ class VideoFrameConverter:
     
     def load_video_file(self, filepath):
         """加载视频文件"""
+        self.video_file = filepath
+        
+        # 显示文件名
+        filename = os.path.basename(filepath)
+        self.filename_label.configure(text=filename)
+        
+        # 获取视频信息
         try:
-            # 停止当前播放
-            self.stop_video()
-            
-            # 打开视频文件
-            self.cap = cv2.VideoCapture(filepath)
-            
-            if not self.cap.isOpened():
-                messagebox.showerror("错误", "无法打开视频文件")
-                return
-            
-            # 获取视频信息
-            self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            self.video_fps = self.cap.get(cv2.CAP_PROP_FPS)
-            self.current_frame = 0
-            
-            # 设置变量
-            self.video_file = filepath
-            self.original_fps = self.video_fps
-            self.fps_var.set(str(int(self.video_fps)))
-            
-            # 切换到视频播放界面
-            self.switch_to_video_view()
-            
-            # 显示文件信息
-            filename = os.path.basename(filepath)
-            self.filename_label.configure(text=filename)
-            self.fps_label.configure(text=f"原视频帧率：{self.video_fps:.2f}fps, 总帧数：{self.total_frames}")
-            
-            # 显示第一帧
-            self.display_current_frame()
-            self.update_time_label()
-            
-            # 更新界面状态
-            self.check_start_button()
-            
+            fps = self.get_video_fps(filepath)
+            if fps:
+                self.original_fps = fps
+                self.fps_var.set(str(fps))
+                self.fps_label.configure(text=f"原视频帧率：{fps}fps")
+            else:
+                self.fps_label.configure(text="无法获取视频帧率")
         except Exception as e:
-            messagebox.showerror("错误", f"加载视频失败：{str(e)}")
-            if self.cap:
-                self.cap.release()
-                self.cap = None
-    
-    def switch_to_video_view(self):
-        """切换到视频播放界面"""
-        self.drop_frame.pack_forget()
-        self.video_frame.pack(fill='both', expand=True)
-    
-    def switch_to_drop_view(self):
-        """切换到拖拽界面"""
-        self.video_frame.pack_forget()
-        self.drop_frame.pack(fill='both', expand=True)
-    
-    def clear_video(self):
-        """清除视频，返回初始状态"""
-        # 停止播放
-        self.stop_video()
-        
-        # 释放资源
-        if self.cap:
-            self.cap.release()
-            self.cap = None
-        
-        # 重置变量
-        self.video_file = None
-        self.original_fps = None
-        self.current_frame = 0
-        self.total_frames = 0
-        self.is_playing = False
-        
-        # 重置界面
-        self.switch_to_drop_view()
-        self.filename_label.configure(text="")
-        self.fps_label.configure(text="")
-        self.fps_var.set("30")
-        self.video_progress_var.set(0)
-        self.time_label.configure(text="00:00 / 00:00")
-        self.play_btn.configure(text="▶")
+            self.fps_label.configure(text=f"获取视频信息失败：{str(e)}")
         
         # 更新界面状态
         self.check_start_button()
-    
-    def toggle_play(self):
-        """切换播放/暂停"""
-        if not self.cap:
-            return
-        
-        if self.is_playing:
-            self.pause_video()
-        else:
-            self.play_video()
-    
-    def play_video(self):
-        """播放视频"""
-        if not self.cap or self.is_playing:
-            return
-        
-        self.is_playing = True
-        self.play_btn.configure(text="⏸")
-        
-        # 开始播放线程
-        self.video_thread = threading.Thread(target=self.video_play_loop)
-        self.video_thread.daemon = True
-        self.video_thread.start()
-    
-    def pause_video(self):
-        """暂停视频"""
-        self.is_playing = False
-        self.play_btn.configure(text="▶")
-    
-    def stop_video(self):
-        """停止视频"""
-        self.is_playing = False
-        if self.video_thread and self.video_thread.is_alive():
-            self.video_thread = None
-    
-    def video_play_loop(self):
-        """视频播放循环"""
-        frame_duration = 1.0 / self.video_fps if self.video_fps > 0 else 1.0 / 30
-        
-        while self.is_playing and self.cap and self.current_frame < self.total_frames:
-            start_time = time.time()
-            
-            # 设置当前帧位置
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame)
-            
-            # 读取并显示帧
-            ret, frame = self.cap.read()
-            if not ret:
-                break
-            
-            # 在主线程中更新显示
-            self.root.after(0, self.update_video_display, frame)
-            
-            # 更新进度
-            progress = (self.current_frame / self.total_frames) * 100
-            self.root.after(0, lambda: self.video_progress_var.set(progress))
-            self.root.after(0, self.update_time_label)
-            
-            # 下一帧
-            self.current_frame += 1
-            
-            # 控制播放速度
-            elapsed = time.time() - start_time
-            sleep_time = max(0, frame_duration - elapsed)
-            time.sleep(sleep_time)
-        
-        # 播放结束
-        if self.current_frame >= self.total_frames:
-            self.current_frame = 0  # 重置到开始
-            self.root.after(0, self.pause_video)
-    
-    def update_video_display(self, frame):
-        """更新视频显示"""
-        if frame is None:
-            return
-        
-        # 调整帧大小以适应画布
-        canvas_width = self.video_canvas.winfo_width()
-        canvas_height = self.video_canvas.winfo_height()
-        
-        if canvas_width > 1 and canvas_height > 1:
-            # 计算缩放比例，保持宽高比
-            h, w = frame.shape[:2]
-            scale = min(canvas_width/w, canvas_height/h)
-            
-            new_w = int(w * scale)
-            new_h = int(h * scale)
-            
-            # 调整大小
-            frame_resized = cv2.resize(frame, (new_w, new_h))
-            
-            # 转换颜色空间
-            frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
-            
-            # 转换为PIL图像
-            pil_image = Image.fromarray(frame_rgb)
-            photo = ImageTk.PhotoImage(pil_image)
-            
-            # 在画布中央显示
-            self.video_canvas.delete("all")
-            x = canvas_width // 2
-            y = canvas_height // 2
-            self.video_canvas.create_image(x, y, image=photo, anchor='center')
-            
-            # 保持引用，防止被垃圾回收
-            self.video_canvas.image = photo
-    
-    def display_current_frame(self):
-        """显示当前帧"""
-        if not self.cap:
-            return
-        
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame)
-        ret, frame = self.cap.read()
-        if ret:
-            self.update_video_display(frame)
-    
-    def on_progress_change(self, value):
-        """进度条改变"""
-        if not self.cap or self.is_playing:
-            return
-        
-        # 根据进度条位置设置当前帧
-        progress = float(value)
-        self.current_frame = int((progress / 100) * self.total_frames)
-        self.current_frame = max(0, min(self.current_frame, self.total_frames - 1))
-        
-        # 显示对应帧
-        self.display_current_frame()
-        self.update_time_label()
-    
-    def update_time_label(self):
-        """更新时间标签"""
-        if not self.cap or self.total_frames == 0:
-            return
-        
-        current_time = self.current_frame / self.video_fps if self.video_fps > 0 else 0
-        total_time = self.total_frames / self.video_fps if self.video_fps > 0 else 0
-        
-        current_str = f"{int(current_time//60):02d}:{int(current_time%60):02d}"
-        total_str = f"{int(total_time//60):02d}:{int(total_time%60):02d}"
-        
-        self.time_label.configure(text=f"{current_str} / {total_str}")
     
     def get_video_fps(self, filepath):
         """获取视频帧率"""
@@ -718,10 +446,6 @@ class VideoFrameConverter:
         """开始转换"""
         if self.is_converting:
             return
-        
-        # 暂停视频播放
-        if self.is_playing:
-            self.pause_video()
         
         # 验证参数
         if not self.validate_parameters():
@@ -799,6 +523,12 @@ class VideoFrameConverter:
                 text=True,
                 creationflags=subprocess.CREATE_NO_WINDOW  # 隐藏命令行窗口
             )
+            
+            # 添加额外的FFmpeg参数来处理ICC配置
+            cmd.extend([
+                '-sws_flags', 'spline+accurate_rnd+full_chroma_int',
+                '-pix_fmt', 'rgb24'  # 使用标准RGB颜色空间
+            ])
             
             # 监控进度
             self.monitor_progress(total_frames)
@@ -885,12 +615,13 @@ class VideoFrameConverter:
             self.progress_var.set(100)
             
             # 显示完成对话框
-            result = messagebox.askyesno(
+            result = messagebox.showinfo(
                 "转换完成", 
-                f"转换完成，共生成 {frame_count} 帧\n是否打开输出文件夹？"
+                f"转换完成，共生成 {frame_count} 帧\n是否打开输出文件夹？",
+                type='yesno'
             )
             
-            if result:
+            if result == 'yes':
                 self.open_output_folder()
         else:
             self.status_var.set("转换失败")
@@ -934,19 +665,6 @@ class VideoFrameConverter:
                 os.startfile(output_folder)
             elif os.name == 'posix':  # macOS and Linux
                 subprocess.Popen(['open', output_folder])
-    
-    def on_closing(self):
-        """程序关闭时的处理"""
-        # 停止视频播放
-        self.stop_video()
-        
-        # 释放资源
-        if self.cap:
-            self.cap.release()
-        
-        # 关闭窗口
-        self.root.quit()
-        self.root.destroy()
     
     def run(self):
         """运行应用"""
